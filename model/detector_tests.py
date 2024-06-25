@@ -5,17 +5,17 @@ import torchvision
 from torchvision.transforms import v2
 from einops.layers.torch import Rearrange
 import numpy as np
-from ViT import ViT
+from detector import Detector
 
 image_size = 1024
 patch_size = 16
 num_classes = 100
 dim = 1024
-depth = 8
-heads = 16
+depth = 1
+heads = 2
 mlp_dim = 2048
 
-model = ViT(image_size = image_size, patch_size = patch_size, dim = dim, depth = depth, 
+model = Detector(image_size = image_size, patch_size = patch_size, dim = dim, depth = depth, 
             heads = heads, mlp_dim = mlp_dim)
 
 k = 0
@@ -32,10 +32,12 @@ preproc = v2.Compose([
     ])
 x = Image.open("../thing.jpg")
 img = preproc(x).unsqueeze(0).float()
-print(img.shape)
-x = torch.randn(2, 3, 1024, 1024)
+img = torch.randn(2, 3, 1024, 1024)
 y = model(img)
-print(y.shape)
+exit()
+print(y[0].shape, y[1].shape)
+
+
 
 def convertToImage(tensor):
     image = tensor[0, :, :, :].detach().numpy()
