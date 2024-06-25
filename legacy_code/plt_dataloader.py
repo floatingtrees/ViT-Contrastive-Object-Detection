@@ -52,7 +52,8 @@ img_ids = coco.get_imgIds()
 selected_img_ids = [img_ids[i] for i in sel_im_idxs]
 ann_ids = coco.get_annIds(selected_img_ids)
 im_licenses = coco.get_imgLicenses(selected_img_ids)
-
+fig, ax = plt.subplots(nrows=2, ncols=2, figsize=(15,10))
+ax = ax.ravel()
 for i, im in enumerate(selected_img_ids):
     image = Image.open(f"{coco_images_dir}/{str(im).zfill(12)}.jpg")
     draw = ImageDraw.Draw(image)
@@ -67,16 +68,16 @@ for i, im in enumerate(selected_img_ids):
         class_name = coco.load_cats(class_id)[0]["name"]
         license = coco.get_imgLicenses(im)[0]["name"]
         color_ = color_list[class_id]
-
-        box_coords = (x, y, w+ x, h + y)
-        draw.rectangle(box_coords, outline=color_, width=2)
-        _, _, text_width, text_height = draw.textbbox((0, 0), text = class_name)
-        if y - text_height >= 0:
-            text_position = (x + 1, y - text_height - 2)
-        else:
-            text_position = (x + 1, y)
-        
-        background_coords = (text_position[0], text_position[1], text_position[0] + text_width + 2, text_position[1] + text_height)
-        draw.rectangle(background_coords, fill="white", outline = "blue")
-        draw.text(text_position, class_name, fill = "red")
-image.save("image.jpg")
+        rect = plt.Rectangle((x, y), w, h, linewidth=2, edgecolor=color_, facecolor='none')
+        draw.rectangle((x, y, w+ x, h + y), outline=color_, width=2)
+        t_box=ax[i].text(x, y, class_name,  color='red', fontsize=10)
+        t_box.set_bbox(dict(boxstyle='square, pad=0',facecolor='white', alpha=0.6, edgecolor='blue'))
+        ax[i].add_patch(rect)
+    
+    ax[i].axis('off')
+    ax[i].imshow(image)
+    image.save("image.jpg")
+    ax[i].set_xlabel('Longitude')
+    ax[i].set_title(f"License: {license}")
+plt.tight_layout()
+plt.show()
