@@ -158,6 +158,7 @@ class classification_ViT(nn.Module):
 
         self.pool = pool
         self.to_latent = nn.Identity()
+        self.regression_head = nn.Linear(dim, 4)
 
         self.mlp_head = nn.Linear(dim, encoding_dimensionality)
 
@@ -175,4 +176,5 @@ class classification_ViT(nn.Module):
         x = x.mean(dim = 1) if self.pool == 'mean' else x[:, 0]
 
         x = self.to_latent(x)
-        return self.mlp_head(x)
+        # return in classes, positions
+        return (self.mlp_head(x), self.regression_head(x))

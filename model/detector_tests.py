@@ -10,7 +10,7 @@ from detector import Detector
 image_size = 1024
 patch_size = 16
 num_classes = 100
-dim = 1024
+dim = 512
 depth = 1
 heads = 2
 mlp_dim = 2048
