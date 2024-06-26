@@ -39,9 +39,12 @@ class Detector(nn.Module):
                 classifier_mlp_dim = 2048, # mlp dim of the classifier
                 classifier_patch_size = 8, # classifier patch size, with respect to the feature map
                 box_heights = (2, 4, 8), #possible anchor box heights for RPN, scales with patch size
-                box_widths = (2, 4,8) # possible anchor box widths for RPN
+                box_widths = (2, 4,8), # possible anchor box widths for RPN
+                classifier_cores = None
                 ):
         super(Detector, self).__init__()
+        self.classifier_cores = classifier_cores
+
         image_height, image_width = pair(image_size)
         patch_height, patch_width = pair(patch_size)
 
@@ -99,7 +102,6 @@ class Detector(nn.Module):
             height_end = indexing_tensor[3]
             batch_location = indexing_tensor[4]
             section = features_and_image[batch_location, :, height_start:height_end + self.patch_height, width_start:width_end + self.patch_width]
-            print(section.shape)
             reshaped = self.transformations[str(index_scalar)](section)
             tensor_list.append(reshaped)
 
@@ -108,7 +110,7 @@ class Detector(nn.Module):
         model_outputs = self.classifiers[str(index_scalar)](stacked_tensor)
         return model_outputs
 
-    def forward(self, img, classifier_batch_size = 128, is_object_threshold = 0.5, indexing_cores = 2, device = "cpu"):
+    def forward(self, img, classifier_batch_size = 1024, is_object_threshold = 0.5, device = "cpu"):
         #coarse_regressor_epsilon = 0.05
         # Images come in in shape (channel, width, height)
         # coco labels are in (top_left_corner_height_location, top_left_corner_width_location, rectangle_height, rectangle_width)
@@ -122,7 +124,7 @@ class Detector(nn.Module):
         feature_h = regs.shape[1]
         feature_w = regs.shape[2]
 
-        k_index = torch.arange(9, device = device)
+        k_index = torch.arange(0, 9, device = device)
         k_index = repeat(k_index, 'k -> b h w k x', b = b, h = feature_h, w = feature_w, x = 1)
         
         # convert relative widths_coordinates to absolute width
@@ -165,8 +167,8 @@ class Detector(nn.Module):
         # Make a mask that throws out all tensors that reach out of the screen, and all tensors where 
         # the lower right corner is higher/more left than the upper left corner
         valid_boxes_mask = ((tensor_reshaped[..., 0] >= 0) & (tensor_reshaped[..., 0] < w) & (tensor_reshaped[..., 1] >= 0) &
-         (tensor_reshaped[..., 1] < h) & (tensor_reshaped[..., 2] >= tensor_reshaped[..., 0] + 1) & 
-         (tensor_reshaped[..., 2] <= w) & (tensor_reshaped[..., 3] >= tensor_reshaped[..., 1] + 1) & 
+         (tensor_reshaped[..., 1] < h) & (tensor_reshaped[..., 2] >= tensor_reshaped[..., 0]) & 
+         (tensor_reshaped[..., 2] <= w) & (tensor_reshaped[..., 3] >= tensor_reshaped[..., 1]) & 
          (tensor_reshaped[..., 3] <= h))
         filtered_tensor = tensor_reshaped[valid_boxes_mask]
 
@@ -174,7 +176,7 @@ class Detector(nn.Module):
         objects = filtered_tensor[is_object_mask]
         backgrounds = filtered_tensor[~is_object_mask]
 
-
+        
         num_object_samples = min(objects.shape[0], classifier_batch_size // 2)
 
         object_indices = torch.randperm(objects.shape[0])[:num_object_samples]
@@ -200,24 +202,29 @@ class Detector(nn.Module):
             current_value = round(classifier_batch[i, 6].item())
             if (current_value != running_k):
                 print(current_value, running_k)
-                classifier_batch_list.append(classifier_batch[start_index: i, :])
+                classifier_batch_list.append([classifier_batch[start_index: i, :], running_k])
                 start_index = i
                 running_k = current_value
-        classifier_batch_list.append(classifier_batch[start_index:, :])
-
-        assert (torch.cat(classifier_batch_list, dim= 0).shape == classifier_batch.shape)
-        assert (torch.equal(torch.cat(classifier_batch_list, dim= 0), classifier_batch))
+        classifier_batch_list.append([classifier_batch[start_index:, :], running_k])
 
         upsampled_map = torch.nn.functional.interpolate(feature_map, (h, w))
         features_and_image = torch.concat((upsampled_map, img), dim=1)
-        print("catting")
+        # Pad the image so the per pixel offsets work (there's probably a better solution for this)
+        # But I don't want to do more math today, and it's probably not worth optimizing
         features_and_image = torch.nn.functional.pad(features_and_image, (8, 8, 8, 8), "constant", 0)
+
         model_outputs_class = []
         model_outputs_regression = []
-        for i in range(len(classifier_batch_list)):
-            outputs = self.preprocess_slices(classifier_batch_list[i], index_scalar = i, features_and_image=features_and_image)
-            model_outputs_class.append(outputs[0])
-            model_outputs_regression.append(outputs[1])
+        if self.classifier_cores is None:
+            
+            for i in range(len(classifier_batch_list)):
+                outputs = self.preprocess_slices(classifier_batch_list[i][0], index_scalar = classifier_batch_list[i][1], features_and_image=features_and_image)
+                model_outputs_class.append(outputs[0])
+                model_outputs_regression.append(outputs[1])
+        else:
+            with multiprocessing.Pool() as pool:
+                outputs = pool.map()
+
         class_outputs = torch.cat(model_outputs_class, dim = 0)
         regression_outputs = torch.cat(model_outputs_regression, dim = 0)
         print(class_outputs.shape, regression_outputs.shape)
