@@ -89,7 +89,7 @@ class Detector(nn.Module):
                                                              mlp_dim=classifier_mlp_dim,
                                                              channels= dim + image_channels)
             
-    def preprocess_slices(self, tensor, index_scalar, features_and_image):
+    def preprocess_slices(self, tensor, index_scalar, features_and_image, device, stream):
         tensor = probabilistic_round(tensor.clone().detach())
 
         tensor_list = []
@@ -107,7 +107,12 @@ class Detector(nn.Module):
 
         stacked_tensor = torch.stack(tensor_list, dim=0)
         print(f"STACKED TENSOR SHAPE {index_scalar}: ", stacked_tensor.shape)
-        model_outputs = self.classifiers[str(index_scalar)](stacked_tensor)
+        if device == "cuda":
+            with torch.cuda.stream(stream):
+                model_outputs = self.classifiers[str(index_scalar)](stacked_tensor)
+        else:
+            model_outputs = self.classifiers[str(index_scalar)](stacked_tensor)
+        
         return model_outputs
 
     def forward(self, img, classifier_batch_size = 1024, is_object_threshold = 0.5, device = "cpu"):
@@ -215,15 +220,21 @@ class Detector(nn.Module):
 
         model_outputs_class = []
         model_outputs_regression = []
-        if self.classifier_cores is None:
-            
+
+        streams = []
+        if device == "cuda":
             for i in range(len(classifier_batch_list)):
-                outputs = self.preprocess_slices(classifier_batch_list[i][0], index_scalar = classifier_batch_list[i][1], features_and_image=features_and_image)
-                model_outputs_class.append(outputs[0])
-                model_outputs_regression.append(outputs[1])
+                streams.append(torch.cuda.Stream())
         else:
-            with multiprocessing.Pool() as pool:
-                outputs = pool.map()
+            for i in range(len(classifier_batch_list)):
+                streams.append(None)
+        for i in range(len(classifier_batch_list)):
+            outputs = self.preprocess_slices(classifier_batch_list[i][0], index_scalar = classifier_batch_list[i][1], features_and_image=features_and_image, device = device, stream = streams[i])
+            model_outputs_class.append(outputs[0])
+            model_outputs_regression.append(outputs[1])
+            
+        if device == "cuda":
+            torch.cuda.synchronize()
 
         class_outputs = torch.cat(model_outputs_class, dim = 0)
         regression_outputs = torch.cat(model_outputs_regression, dim = 0)

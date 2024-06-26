@@ -16,7 +16,7 @@ heads = 2
 mlp_dim = 2048
 
 model = Detector(image_size = image_size, patch_size = patch_size, dim = dim, depth = depth, 
-            heads = heads, mlp_dim = mlp_dim)
+            heads = heads, mlp_dim = mlp_dim, classifier_cores= 2)
 
 k = 0
 for thing in model.parameters():
