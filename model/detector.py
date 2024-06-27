@@ -40,10 +40,8 @@ class Detector(nn.Module):
                 classifier_patch_size = 8, # classifier patch size, with respect to the feature map
                 box_heights = (2, 4, 8), #possible anchor box heights for RPN, scales with patch size
                 box_widths = (2, 4,8), # possible anchor box widths for RPN
-                classifier_cores = None
                 ):
         super(Detector, self).__init__()
-        self.classifier_cores = classifier_cores
 
         image_height, image_width = pair(image_size)
         patch_height, patch_width = pair(patch_size)
@@ -101,7 +99,7 @@ class Detector(nn.Module):
             width_end = indexing_tensor[2]
             height_end = indexing_tensor[3]
             batch_location = indexing_tensor[4]
-            section = features_and_image[batch_location, :, height_start:height_end + self.patch_height, width_start:width_end + self.patch_width]
+            section = features_and_image[batch_location, :, height_start:height_end, width_start:width_end]
             reshaped = self.transformations[str(index_scalar)](section)
             tensor_list.append(reshaped)
 
@@ -115,8 +113,8 @@ class Detector(nn.Module):
         
         return model_outputs
 
-    def forward(self, img, classifier_batch_size = 1024, is_object_threshold = 0.5, device = "cpu"):
-        #coarse_regressor_epsilon = 0.05
+    def forward(self, img, classifier_batch_size = 256, is_object_threshold = 0.5, device = "cpu"):
+        #coarse_regressor predictions are padding by one patch
         # Images come in in shape (channel, width, height)
         # coco labels are in (top_left_corner_height_location, top_left_corner_width_location, rectangle_height, rectangle_width)
         b, c, h, w = img.shape
@@ -149,18 +147,17 @@ class Detector(nn.Module):
         box_width_ratios = torch.tensor(self.anchor_boxes_width)
         box_width_relative = regs[:, :, :, :, (2, )]
         box_width_ratios = rearrange(box_width_ratios, 'c -> 1 1 1 c 1')
-        width_scaled = torch.mul(box_width_ratios, box_width_relative)
+        width_scaled = torch.mul(box_width_ratios, box_width_relative) + self.patch_width
         width_abs = width_coordinates + width_scaled
-        
 
 
         # compute the heights after being rescaled by anchor box sizes
         box_height_ratios = torch.tensor(self.anchor_boxes_height)
         box_height_relative = regs[:, :, :, :, (3, )]
         box_height_ratios = rearrange(box_height_ratios, 'c -> 1 1 1 c 1')
-        height_abs = torch.mul(box_height_ratios, box_height_relative) + height_coordinates
+        height_abs = torch.mul(box_height_ratios, box_height_relative) + height_coordinates + self.patch_height
 
-        batch_sizes = torch.arange(b, device=  device)
+        batch_sizes = torch.arange(b, device = device)
         broadcasted_batch = repeat(batch_sizes, "b -> b h w k x", h = feature_h, w = feature_w, k = self.k, x = 1)
 
 
@@ -170,11 +167,11 @@ class Detector(nn.Module):
         print(tensor_reshaped.shape)
 
         # Make a mask that throws out all tensors that reach out of the screen, and all tensors where 
-        # the lower right corner is higher/more left than the upper left corner
+        # the lower right corner is higher/more left than the upper left corner, accounting for extra padding
         valid_boxes_mask = ((tensor_reshaped[..., 0] >= 0) & (tensor_reshaped[..., 0] < w) & (tensor_reshaped[..., 1] >= 0) &
          (tensor_reshaped[..., 1] < h) & (tensor_reshaped[..., 2] >= tensor_reshaped[..., 0]) & 
-         (tensor_reshaped[..., 2] <= w) & (tensor_reshaped[..., 3] >= tensor_reshaped[..., 1]) & 
-         (tensor_reshaped[..., 3] <= h))
+         (tensor_reshaped[..., 2] <= w + self.patch_width) & (tensor_reshaped[..., 3] >= tensor_reshaped[..., 1]) & 
+         (tensor_reshaped[..., 3] <= h + self.patch_height))
         filtered_tensor = tensor_reshaped[valid_boxes_mask]
 
         is_object_mask = filtered_tensor[..., 5] > is_object_threshold # check on the objectness score
@@ -216,7 +213,10 @@ class Detector(nn.Module):
         features_and_image = torch.concat((upsampled_map, img), dim=1)
         # Pad the image so the per pixel offsets work (there's probably a better solution for this)
         # But I don't want to do more math today, and it's probably not worth optimizing
-        features_and_image = torch.nn.functional.pad(features_and_image, (8, 8, 8, 8), "constant", 0)
+        features_and_image = torch.nn.functional.pad(features_and_image, (self.patch_height // 2, 
+                                                                          self.patch_width // 2, 
+                                                                          self.patch_height // 2, 
+                                                                          self.patch_width // 2), "constant", 0)
 
         model_outputs_class = []
         model_outputs_regression = []
@@ -232,27 +232,16 @@ class Detector(nn.Module):
             outputs = self.preprocess_slices(classifier_batch_list[i][0], index_scalar = classifier_batch_list[i][1], features_and_image=features_and_image, device = device, stream = streams[i])
             model_outputs_class.append(outputs[0])
             model_outputs_regression.append(outputs[1])
-            
+
         if device == "cuda":
             torch.cuda.synchronize()
 
         class_outputs = torch.cat(model_outputs_class, dim = 0)
         regression_outputs = torch.cat(model_outputs_regression, dim = 0)
-        print(class_outputs.shape, regression_outputs.shape)
-        exit()
-        
-        
-        print(torch.sum(mask))
-        print(locations)
-        print(locations.shape)
-        exit()
-        print(regs.shape, is_object.shape)
-        is_object_dict = []
-        
-        print(features_and_image.shape)
+        classifier_batch_base_coordinates = classifier_batch[:, :4]
+        objectness = classifier_batch[:, 5]
+        adjusted_regression_outptus = regression_outputs + classifier_batch_base_coordinates
 
-        for i, size in enumerate(self.anchor_boxes):
-            objectness = is_object[:, :, :, i:(i + 2)]
-            print(objectness.shape)
-        exit()
-        anchor_boxes = self.RPN.anchor_boxes
+        # Debugging: Make sure regression outputs + classifier_batch_base coordinates still looks at roughly the same position        
+        return class_outputs, adjusted_regression_outptus, objectness
+        
