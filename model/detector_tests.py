@@ -5,6 +5,7 @@ import torchvision
 from torchvision.transforms import v2
 from einops.layers.torch import Rearrange
 import numpy as np
+
 from detector import Detector
 
 image_size = 1024
@@ -16,7 +17,7 @@ heads = 2
 mlp_dim = 2048
 
 model = Detector(image_size = image_size, patch_size = patch_size, dim = dim, depth = depth, 
-            heads = heads, mlp_dim = mlp_dim, classifier_cores= 2)
+            heads = heads, mlp_dim = mlp_dim)
 
 k = 0
 for thing in model.parameters():
@@ -32,7 +33,7 @@ preproc = v2.Compose([
     ])
 x = Image.open("../thing.jpg")
 img = preproc(x).unsqueeze(0).float()
-img = torch.randn(2, 3, 1024, 1024)
+img = torch.randn(1, 3, 1024, 1024)
 y = model(img)
 exit()
 print(y[0].shape, y[1].shape)

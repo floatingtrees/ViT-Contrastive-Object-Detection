@@ -23,3 +23,10 @@ for thing in model.parameters():
     k += thing.numel()
 print(k)
 
+
+x = torch.randn(2, 3, 1024, 1024)
+for i in range(1000):
+    
+    class_encodings = torch.randn(2, 512)
+    y = model(x)
+

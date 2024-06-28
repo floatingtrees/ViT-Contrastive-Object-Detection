@@ -7,6 +7,7 @@ from einops import repeat, rearrange
 import torchvision
 from torchvision.transforms import v2
 import multiprocessing
+import time
 
 def probabilistic_round(tensor):
     # Get the fractional part of each element
@@ -69,7 +70,6 @@ class Detector(nn.Module):
             self.anchor_boxes_height.append(element[0])
             self.anchor_boxes_width.append(element[1])
         self.k = len(self.anchor_boxes)
-
         self.separate_anchor_boxes = Rearrange("b (h) (w) (c s) -> b h w c s", s = 4) # rearrange the tensor so bounding box coordinates are on a new dimension 
 
         self.classifiers = nn.ModuleDict()
@@ -85,7 +85,7 @@ class Detector(nn.Module):
                                                              depth = classifier_depth, 
                                                              heads = classifier_heads, 
                                                              mlp_dim=classifier_mlp_dim,
-                                                             channels= dim + image_channels)
+                                                             channels= image_channels)
             
     def preprocess_slices(self, tensor, index_scalar, features_and_image, device, stream):
         tensor = probabilistic_round(tensor.clone().detach())
@@ -114,6 +114,7 @@ class Detector(nn.Module):
         return model_outputs
 
     def forward(self, img, classifier_batch_size = 256, is_object_threshold = 0.5, device = "cpu"):
+        # Tensor shape must be in (1, c, h, w); a batch size greater than one will mess things up
         #coarse_regressor predictions are padding by one patch
         # Images come in in shape (channel, width, height)
         # coco labels are in (top_left_corner_height_location, top_left_corner_width_location, rectangle_height, rectangle_width)
@@ -192,8 +193,6 @@ class Detector(nn.Module):
         # sort the batch by it's corresponding k value so we can batch feed them into the same classifier
         sorted_indices = torch.argsort(classifier_batch[:, 6])
         classifier_batch = classifier_batch[sorted_indices]
-        print(classifier_batch)
-        print(classifier_batch.shape)
 
         # seperate the tensors into lists based on k values
         classifier_batch_list = []
@@ -209,8 +208,8 @@ class Detector(nn.Module):
                 running_k = current_value
         classifier_batch_list.append([classifier_batch[start_index:, :], running_k])
 
-        upsampled_map = torch.nn.functional.interpolate(feature_map, (h, w))
-        features_and_image = torch.concat((upsampled_map, img), dim=1)
+        features_and_image = img
+
         # Pad the image so the per pixel offsets work (there's probably a better solution for this)
         # But I don't want to do more math today, and it's probably not worth optimizing
         features_and_image = torch.nn.functional.pad(features_and_image, (self.patch_height // 2, 
