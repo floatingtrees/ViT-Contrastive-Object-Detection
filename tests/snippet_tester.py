@@ -1,31 +1,43 @@
 import torch
 
-# Example tensor, assuming it's sorted by column at index 6
-classifier_batch = torch.tensor([
-    [1, 2, 3, 4, 5, 6, 0],
-    [1, 2, 3, 4, 5, 6, 0],
-    [1, 2, 3, 4, 5, 6, 1],
-    [1, 2, 3, 4, 5, 6, 2],
-    [1, 2, 3, 4, 5, 6, 2],
-    [1, 2, 3, 4, 5, 6, 3]
-], dtype=torch.float32)
+# Define the example tensors A and B
+# Tensor A: (num_boxes, 4)
+A = torch.tensor([
+    [1, 1, 4, 4],
+    [5, 5, 8, 8]
+])
 
-length = classifier_batch.size(0)
-classifier_batch_list = []
-start_index = 0
-running_k = classifier_batch[0, 6].item()  # Initialize to the first element's value in column 6
+# Tensor B: (batch_size, 4)
+B = torch.tensor([
+    [2, 2, 6, 6],
+    [0, 0, 3, 3]
+])
 
-# Iterate through the sorted tensor
-for i in range(1, length):
-    if round(classifier_batch[i, 6].item()) != running_k:
-        classifier_batch_list.append(classifier_batch[start_index:i, :])
-        start_index = i
-        running_k = classifier_batch[i, 6].item()  # Update to the current new value
+# Expand A and B for broadcasting
+A_exp = A[:, None, :]  # Shape: (num_boxes, 1, 4)
+B_exp = B[None, :, :]  # Shape: (1, batch_size, 4)
+print(A_exp, B_exp)
 
-# Append the final segment
-classifier_batch_list.append(classifier_batch[start_index:length, :])
+# Compute the coordinates of the intersection boxes
+max_ul = torch.max(A_exp[:, :, :2], B_exp[:, :, :2])  # upper-left corner
+min_lr = torch.min(A_exp[:, :, 2:], B_exp[:, :, 2:])  # lower-right corner
 
-# Display the results
-for idx, segment in enumerate(classifier_batch_list):
-    print(f"Segment {idx}:")
-    print(segment)
+# Compute the sizes of the intersection boxes
+inter_sizes = torch.clamp(min_lr - max_ul, min=0)  # (num_boxes, batch_size, 2)
+inter_area = inter_sizes[:, :, 0] * inter_sizes[:, :, 1]  # (num_boxes, batch_size)
+
+# Compute the area of each box in A and B
+A_area = (A[:, 2] - A[:, 0]) * (A[:, 3] - A[:, 1])  # (num_boxes,)
+B_area = (B[:, 2] - B[:, 0]) * (B[:, 3] - B[:, 1])  # (batch_size,)
+
+# Expand areas for broadcasting
+A_area_exp = A_area[:, None]  # (num_boxes, 1)
+B_area_exp = B_area[None, :]  # (1, batch_size)
+
+# Compute the union area
+union_area = A_area_exp + B_area_exp - inter_area
+
+# Compute the IoU
+iou = inter_area / union_area
+
+print("IoU Matrix:\n", iou)
