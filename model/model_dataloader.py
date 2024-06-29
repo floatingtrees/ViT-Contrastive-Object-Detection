@@ -4,6 +4,9 @@ import numpy as np
 from PIL import Image, ImageDraw
 import torch
 from torch.utils.data import Dataset
+from torch.utils.data import DataLoader
+from torchvision.transforms import v2
+import torchvision
 
 
 class COCOParser:
@@ -29,9 +32,12 @@ class COCOParser:
         return list(self.im_dict.keys())
     def get_annIds(self, im_ids):
         im_ids=im_ids if isinstance(im_ids, list) else [im_ids]
+        print([ann['id'] for im_id in im_ids for ann in self.annIm_dict[im_id]])
+        exit()
         return [ann['id'] for im_id in im_ids for ann in self.annIm_dict[im_id]]
     def load_anns(self, ann_ids):
         im_ids=ann_ids if isinstance(ann_ids, list) else [ann_ids]
+        
         return [self.annId_dict[ann_id] for ann_id in ann_ids]        
     def load_cats(self, class_ids):
         class_ids=class_ids if isinstance(class_ids, list) else [class_ids]
@@ -43,30 +49,54 @@ class COCOParser:
     
 
 
-class dataloader(Dataset):
+class BoxLoader(Dataset):
     def __init__(self, anns_file, imgs_dir):
-        self.coco_parser = self.coco(anns_file, imgs_dir)
+        self.coco = COCOParser(anns_file, imgs_dir)
         self.imgs_dir = imgs_dir
+        self.preproc = v2.Compose([
+            v2.PILToTensor(),
+            torchvision.transforms.Resize(size=(1024, 1024), antialias=True),
+            ])
 
     def __len__(self):
-        return len(self.coco_parser.get_imgIds)
+        return len(self.coco.get_imgIds())
     
     def __getitem__(self, idx):
-        total_images = coco.get_imgIds()
-        selected_id = total_images[idx]
         img_ids = self.coco.get_imgIds()
-        selected_img_ids = img_ids[selected_id]
-        ann_ids = coco.get_annIds(self.selected_img_ids)
+        selected_img_ids = img_ids[idx]
+
+        ann_ids = self.coco.get_annIds(selected_img_ids)
+        print(ann_ids)
         image = Image.open(f"{self.imgs_dir}/{str(selected_img_ids).zfill(12)}.jpg")
-        return image, ann_ids
+        
+        return self.preproc(image), ann_ids
 
 
 
     
-coco_annotations_file="../coco2017/annotations/instances_train2017.json"
-coco_images_dir="../coco2017/train2017"
-coco= COCOParser(coco_annotations_file, coco_images_dir)
+coco_annotations_file="../../coco2017/annotations/instances_train2017.json"
+coco_images_dir="../../coco2017/train2017"
+dataset = BoxLoader(coco_annotations_file, coco_images_dir)
+dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
 
+for x, y in dataloader:
+    print(x.shape, y)
+    exit()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+exit()
 import matplotlib.pyplot as plt
 from PIL import Image
 # define a list of colors for drawing bounding boxes
