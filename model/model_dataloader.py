@@ -32,8 +32,6 @@ class COCOParser:
         return list(self.im_dict.keys())
     def get_annIds(self, im_ids):
         im_ids=im_ids if isinstance(im_ids, list) else [im_ids]
-        print([ann['id'] for im_id in im_ids for ann in self.annIm_dict[im_id]])
-        exit()
         return [ann['id'] for im_id in im_ids for ann in self.annIm_dict[im_id]]
     def load_anns(self, ann_ids):
         im_ids=ann_ids if isinstance(ann_ids, list) else [ann_ids]
@@ -65,11 +63,24 @@ class BoxLoader(Dataset):
         img_ids = self.coco.get_imgIds()
         selected_img_ids = img_ids[idx]
 
-        ann_ids = self.coco.get_annIds(selected_img_ids)
-        print(ann_ids)
+        #ann_ids = self.coco.get_annIds(selected_img_ids)
+
         image = Image.open(f"{self.imgs_dir}/{str(selected_img_ids).zfill(12)}.jpg")
-        
-        return self.preproc(image), ann_ids
+        ann_ids = self.coco.get_annIds(selected_img_ids)
+        annotations = self.coco.load_anns(ann_ids)
+        boxes = torch.zeros((len(annotations), 4))
+        encodings = torch.zeros((len(annotations), 512))
+        exit()
+        for i, ann in enumerate(annotations):
+            bbox = ann['bbox']
+            x, y, w, h = [int(b) for b in bbox]
+            boxes[i, 0] = x
+            boxes[i, 0] = y
+            boxes[i, 0] = x + w
+            boxes[i, 0] = y + h
+            class_id = ann["category_id"]
+            class_name = self.coco.load_cats(class_id)[0]["name"]
+        return self.preproc(image), boxes
 
 
 
