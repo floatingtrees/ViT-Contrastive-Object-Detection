@@ -36,7 +36,8 @@ preproc = v2.Compose([
 #img = preproc(x).unsqueeze(0).float()
 img = torch.randn(2, 3, 1024, 1024)
 img = img.to(device)
-y = model(img)
+model.to(device)
+y = model(img, device = device)
 exit()
 print(y[0].shape, y[1].shape)
 

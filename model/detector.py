@@ -113,7 +113,7 @@ class Detector(nn.Module):
         
         return model_outputs
 
-    def forward(self, img, classifier_batch_size = 256, is_object_threshold = 0.5, device = "cpu"):
+    def forward(self, img, classifier_batch_size = 4096, is_object_threshold = 0.5, device = "cpu"):
         # Tensor shape must be in (1, c, h, w); a batch size greater than one will mess things up
         #coarse_regressor predictions are padding by one patch
         # Images come in in shape (channel, width, height)
@@ -134,27 +134,27 @@ class Detector(nn.Module):
         # convert relative widths_coordinates to absolute width
         width_coordinates = torch.arange(start = 0, end = w, step = self.patch_width, device = device)
         width_coordinates = repeat(width_coordinates, 'w -> b h w k x', b = b, h = feature_h, k = self.k, x = 1)
-        width_offset = regs[:, :, :, :, (0, )]
+        width_offset = regs[:, :, :, :, (0, )].to(device)
         width_coordinates = width_coordinates + width_offset
 
         # convert height_coordinates to absolute height
         height_coordinates = torch.arange(start = 0, end = h, step = self.patch_height, device = device)
         height_coordinates = repeat(height_coordinates, 'h -> b h w k x', b = b, w = feature_w, k = self.k, x = 1)
-        height_offset = regs[:, :, :, :, (1, )] # slice with 
+        height_offset = regs[:, :, :, :, (1, )].to(device) # slice with 
         height_coordinates = height_coordinates + height_offset
         
 
          # compute widths after being rescaled by anchor box widths
-        box_width_ratios = torch.tensor(self.anchor_boxes_width)
-        box_width_relative = regs[:, :, :, :, (2, )]
+        box_width_ratios = torch.tensor(self.anchor_boxes_width).to(device)
+        box_width_relative = regs[:, :, :, :, (2, )].to(device)
         box_width_ratios = rearrange(box_width_ratios, 'c -> 1 1 1 c 1')
         width_scaled = torch.mul(box_width_ratios, box_width_relative) + self.patch_width
         width_abs = width_coordinates + width_scaled
 
 
         # compute the heights after being rescaled by anchor box sizes
-        box_height_ratios = torch.tensor(self.anchor_boxes_height)
-        box_height_relative = regs[:, :, :, :, (3, )]
+        box_height_ratios = torch.tensor(self.anchor_boxes_height).to(device)
+        box_height_relative = regs[:, :, :, :, (3, )].to(device)
         box_height_ratios = rearrange(box_height_ratios, 'c -> 1 1 1 c 1')
         height_abs = torch.mul(box_height_ratios, box_height_relative) + height_coordinates + self.patch_height
 
@@ -163,6 +163,7 @@ class Detector(nn.Module):
 
 
         # After the concatenation, we have upper_left_x, upper_left_y, lower_left_x, lower_left_y, batch_index, is_object, classifier_index
+
         merged_tensor = torch.cat((width_coordinates, height_coordinates, width_abs, height_abs, broadcasted_batch, is_object, k_index), dim= 4)
         tensor_reshaped = rearrange(merged_tensor, "b h w k x -> (b h w k) x")
         print(tensor_reshaped.shape)
