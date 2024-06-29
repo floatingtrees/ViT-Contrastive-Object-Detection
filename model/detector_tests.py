@@ -5,6 +5,7 @@ import torchvision
 from torchvision.transforms import v2
 from einops.layers.torch import Rearrange
 import numpy as np
+
 from detector import Detector
 
 image_size = 1024
@@ -17,8 +18,7 @@ mlp_dim = 2048
 
 device = "cuda"
 model = Detector(image_size = image_size, patch_size = patch_size, dim = dim, depth = depth, 
-            heads = heads, mlp_dim = mlp_dim, classifier_cores= 2)
-model.to(device)
+            heads = heads, mlp_dim = mlp_dim)
 
 k = 0
 for thing in model.parameters():
