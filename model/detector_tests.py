@@ -15,8 +15,10 @@ depth = 1
 heads = 2
 mlp_dim = 2048
 
+device = "cuda"
 model = Detector(image_size = image_size, patch_size = patch_size, dim = dim, depth = depth, 
             heads = heads, mlp_dim = mlp_dim, classifier_cores= 2)
+model.to(device)
 
 k = 0
 for thing in model.parameters():
@@ -30,9 +32,10 @@ preproc = v2.Compose([
     v2.PILToTensor(),
     torchvision.transforms.Resize(size=(1024, 1024), antialias=True),
     ])
-x = Image.open("../thing.jpg")
-img = preproc(x).unsqueeze(0).float()
+#x = Image.open("../thing.jpg")
+#img = preproc(x).unsqueeze(0).float()
 img = torch.randn(2, 3, 1024, 1024)
+img = img.to(device)
 y = model(img)
 exit()
 print(y[0].shape, y[1].shape)
