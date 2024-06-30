@@ -104,7 +104,6 @@ class Detector(nn.Module):
             tensor_list.append(reshaped)
 
         stacked_tensor = torch.stack(tensor_list, dim=0)
-        print(f"STACKED TENSOR SHAPE {index_scalar}: ", stacked_tensor.shape)
         if device == "cuda":
             with torch.cuda.stream(stream):
                 model_outputs = self.classifiers[str(index_scalar)](stacked_tensor)
@@ -163,10 +162,8 @@ class Detector(nn.Module):
 
 
         # After the concatenation, we have upper_left_x, upper_left_y, lower_left_x, lower_left_y, batch_index, is_object, classifier_index
-
         merged_tensor = torch.cat((width_coordinates, height_coordinates, width_abs, height_abs, broadcasted_batch, is_object, k_index), dim= 4)
         tensor_reshaped = rearrange(merged_tensor, "b h w k x -> (b h w k) x")
-        print(tensor_reshaped.shape)
 
         # Make a mask that throws out all tensors that reach out of the screen, and all tensors where 
         # the lower right corner is higher/more left than the upper left corner, accounting for extra padding
@@ -203,7 +200,6 @@ class Detector(nn.Module):
         for i in range(length):
             current_value = round(classifier_batch[i, 6].item())
             if (current_value != running_k):
-                print(current_value, running_k)
                 classifier_batch_list.append([classifier_batch[start_index: i, :], running_k])
                 start_index = i
                 running_k = current_value
@@ -240,8 +236,8 @@ class Detector(nn.Module):
         regression_outputs = torch.cat(model_outputs_regression, dim = 0)
         classifier_batch_base_coordinates = classifier_batch[:, :4]
         objectness = classifier_batch[:, 5]
-        adjusted_regression_outptus = regression_outputs + classifier_batch_base_coordinates
+        adjusted_regression_outputs = regression_outputs + classifier_batch_base_coordinates
 
         # Debugging: Make sure regression outputs + classifier_batch_base coordinates still looks at roughly the same position        
-        return class_outputs, adjusted_regression_outptus, objectness
+        return class_outputs, adjusted_regression_outputs, objectness
         

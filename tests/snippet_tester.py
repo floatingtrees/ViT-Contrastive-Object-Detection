@@ -9,6 +9,7 @@ A = torch.tensor([
 
 # Tensor B: (batch_size, 4)
 B = torch.tensor([
+    [1, 1, 2, 2],
     [2, 2, 6, 6],
     [0, 0, 3, 3]
 ])

@@ -24,7 +24,6 @@ class RPN(nn.Module):
         x = self.relu(x)
         x = self.to_channels_last(x)
 
-        print(x.shape)
         regs = self.reg(x)
         is_object = self.sigmoid(self.cls(x))
 

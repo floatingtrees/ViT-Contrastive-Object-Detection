@@ -7,6 +7,7 @@ from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 from torchvision.transforms import v2
 import torchvision
+import clip
 
 
 class COCOParser:
@@ -47,14 +48,28 @@ class COCOParser:
     
 
 
-class BoxLoader(Dataset):
-    def __init__(self, anns_file, imgs_dir):
+class BoxDataset(Dataset):
+    def __init__(self, anns_file, imgs_dir, device):
+        self.encoder_model, _ = clip.load("ViT-B/32")
+        self.encoder_model.to(device)
+        self.device = device
         self.coco = COCOParser(anns_file, imgs_dir)
         self.imgs_dir = imgs_dir
         self.preproc = v2.Compose([
-            v2.PILToTensor(),
+            torchvision.transforms.ToTensor(),
             torchvision.transforms.Resize(size=(1024, 1024), antialias=True),
             ])
+        self.preproc2 = v2.Compose([
+            torchvision.transforms.ToTensor(),
+            ])
+        categories = self.coco.cat_dict
+        self.encodings = {}
+        for element in categories.keys():
+            class_name = categories[element]["name"]
+            text = clip.tokenize([class_name, ]).to(device)
+            text_features = self.encoder_model.encode_text(text)
+            self.encodings[class_name] = text_features.to("cpu")
+        
 
     def __len__(self):
         return len(self.coco.get_imgIds())
@@ -70,80 +85,77 @@ class BoxLoader(Dataset):
         annotations = self.coco.load_anns(ann_ids)
         boxes = torch.zeros((len(annotations), 4))
         encodings = torch.zeros((len(annotations), 512))
-        exit()
         for i, ann in enumerate(annotations):
             bbox = ann['bbox']
             x, y, w, h = [int(b) for b in bbox]
             boxes[i, 0] = x
-            boxes[i, 0] = y
-            boxes[i, 0] = x + w
-            boxes[i, 0] = y + h
+            boxes[i, 1] = y
+            boxes[i, 2] = x + w
+            boxes[i, 3] = y + h
             class_id = ann["category_id"]
             class_name = self.coco.load_cats(class_id)[0]["name"]
-        return self.preproc(image), boxes
+            
+            with torch.no_grad():
+                encodings[i, :] = self.encodings[class_name]
+        return self.preproc(image), boxes.clone().detach(), encodings.to("cpu").clone().detach(), self.preproc2(image)
 
 
 
-    
-coco_annotations_file="../../coco2017/annotations/instances_train2017.json"
-coco_images_dir="../../coco2017/train2017"
-dataset = BoxLoader(coco_annotations_file, coco_images_dir)
-dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
+if __name__ == "__main__":
+    coco_annotations_file="../../coco2017/annotations/instances_train2017.json"
+    coco_images_dir="../../coco2017/train2017"
+    dataset = BoxDataset(coco_annotations_file, coco_images_dir, device = "cuda")
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
 
-for x, y in dataloader:
-    print(x.shape, y)
+
+
+
+
+
+
+
+
+
+
+
+
     exit()
+    import matplotlib.pyplot as plt
+    from PIL import Image
+    # define a list of colors for drawing bounding boxes
+    color_list = ["pink", "red", "teal", "blue", "orange", "yellow", "black", "magenta","green","aqua"]*10
+    num_imgs_to_disp = 1
+    total_images = len(coco.get_imgIds()) # total number of images
+    sel_im_idxs = np.random.permutation(total_images)[:num_imgs_to_disp]
+    img_ids = coco.get_imgIds()
+    selected_img_ids = [img_ids[i] for i in sel_im_idxs]
+    ann_ids = coco.get_annIds(selected_img_ids)
+    im_licenses = coco.get_imgLicenses(selected_img_ids)
 
+    for i, im in enumerate(selected_img_ids):
+        image = Image.open(f"{coco_images_dir}/{str(im).zfill(12)}.jpg")
+        draw = ImageDraw.Draw(image)
+        ann_ids = coco.get_annIds(im)
+        annotations = coco.load_anns(ann_ids)
+        for ann in annotations:
+            bbox = ann['bbox']
+            print(len(bbox))
+            print(bbox)
+            x, y, w, h = [int(b) for b in bbox]
+            class_id = ann["category_id"]
+            class_name = coco.load_cats(class_id)[0]["name"]
+            license = coco.get_imgLicenses(im)[0]["name"]
+            color_ = color_list[class_id]
 
-
-
-
-
-
-
-
-
-
-
-
-
-exit()
-import matplotlib.pyplot as plt
-from PIL import Image
-# define a list of colors for drawing bounding boxes
-color_list = ["pink", "red", "teal", "blue", "orange", "yellow", "black", "magenta","green","aqua"]*10
-num_imgs_to_disp = 1
-total_images = len(coco.get_imgIds()) # total number of images
-sel_im_idxs = np.random.permutation(total_images)[:num_imgs_to_disp]
-img_ids = coco.get_imgIds()
-selected_img_ids = [img_ids[i] for i in sel_im_idxs]
-ann_ids = coco.get_annIds(selected_img_ids)
-im_licenses = coco.get_imgLicenses(selected_img_ids)
-
-for i, im in enumerate(selected_img_ids):
-    image = Image.open(f"{coco_images_dir}/{str(im).zfill(12)}.jpg")
-    draw = ImageDraw.Draw(image)
-    ann_ids = coco.get_annIds(im)
-    annotations = coco.load_anns(ann_ids)
-    for ann in annotations:
-        bbox = ann['bbox']
-        print(len(bbox))
-        print(bbox)
-        x, y, w, h = [int(b) for b in bbox]
-        class_id = ann["category_id"]
-        class_name = coco.load_cats(class_id)[0]["name"]
-        license = coco.get_imgLicenses(im)[0]["name"]
-        color_ = color_list[class_id]
-
-        box_coords = (x, y, w+ x, h + y)
-        draw.rectangle(box_coords, outline=color_, width=2)
-        _, _, text_width, text_height = draw.textbbox((0, 0), text = class_name)
-        if y - text_height >= 0:
-            text_position = (x + 1, y - text_height - 2)
-        else:
-            text_position = (x + 1, y)
-        
-        background_coords = (text_position[0], text_position[1], text_position[0] + text_width + 2, text_position[1] + text_height)
-        draw.rectangle(background_coords, fill="white", outline = "blue")
-        draw.text(text_position, class_name, fill = "red")
-image.save("image.jpg")
+            box_coords = (x, y, w+ x, h + y)
+            draw.rectangle(box_coords, outline=color_, width=2)
+            _, _, text_width, text_height = draw.textbbox((0, 0), text = class_name)
+            if y - text_height >= 0:
+                text_position = (x + 1, y - text_height - 2)
+            else:
+                text_position = (x + 1, y)
+            
+            background_coords = (text_position[0], text_position[1], text_position[0] + text_width + 2, text_position[1] + text_height)
+            draw.rectangle(background_coords, fill="white", outline = "blue")
+            draw.text(text_position, class_name, fill = "red")
+    image.save("image.jpg")
