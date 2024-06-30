@@ -18,7 +18,9 @@ if __name__ == "__main__":
     depth = 4
     heads = 16
     mlp_dim = 16384
-    print_period = 100
+
+    print_period = 1000
+
     model = Detector(image_size = image_size, patch_size = patch_size, dim = dim, depth = depth, 
                 heads = heads, mlp_dim = mlp_dim)
 
@@ -56,7 +58,7 @@ if __name__ == "__main__":
             categories = categories.to(device)
             if boxes.numel() == 0: # Better way to handle empty images?
                 continue
-            class_outputs, adjusted_regression_outputs, objectness = model(img, classifier_batch_size = 1024, device = device)
+            class_outputs, adjusted_regression_outputs, objectness = model(img, classifier_batch_size = 256, device = device)
             
             invalid_total = calculate_reverse_overlap(adjusted_regression_outputs)
             # invalid boxes are really bad, so the model should learn to fix those first
@@ -66,6 +68,7 @@ if __name__ == "__main__":
             categories = categories.squeeze(0)
 
             IOU_matrix = calculate_iou(adjusted_regression_outputs, boxes)
+            # get the indices where IOUs are either greater than 0.7 IOU or greatest available
             index = torch.argmax(IOU_matrix, dim = 0)
 
             IOU_mask = (IOU_matrix > 0.7)
@@ -74,6 +77,7 @@ if __name__ == "__main__":
             object_label_mask = IOU_mask.clone().float()
 
             object_labels = torch.clamp(torch.sum(object_label_mask, axis = 1, keepdim = False), 0, 1)
+
             # Compute objectness loss
             objectness_loss = binary_crossentropy_loss_fn(objectness, object_labels)
 
@@ -97,9 +101,8 @@ if __name__ == "__main__":
 
             loss = class_loss + IOU_boost + objectness_loss + invalid_penalty
 
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+            loss.backward()
+            optimizer.step()
             
             running_losses[0] += class_loss.item()
             running_losses[1] += IOU_boost.item()
@@ -114,3 +117,4 @@ if __name__ == "__main__":
                 print("\n\n")
                 running_losses = [0, 0, 0, 0]
                 visualize_image(original, adjusted_regression_outputs, categories, objectness, i)
+                visualize_image(original, adjusted_regression_outputs, categories, objectness + 0.2, i+1)

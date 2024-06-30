@@ -100,11 +100,7 @@ class Detector(nn.Module):
             height_end = indexing_tensor[3]
             batch_location = indexing_tensor[4]
             section = features_and_image[batch_location, :, height_start:height_end, width_start:width_end]
-            try:
-                reshaped = self.transformations[str(index_scalar)](section)
-            except:
-                print(height_start,height_end, width_start,width_end)
-                continue
+            reshaped = self.transformations[str(index_scalar)](section)
             tensor_list.append(reshaped)
 
         stacked_tensor = torch.stack(tensor_list, dim=0)

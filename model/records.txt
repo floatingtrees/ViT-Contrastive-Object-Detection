@@ -1,0 +1,18 @@
+197287377
+Epoch 0
+Class loss: 0.00692694365978241
+IOU_boost: -3.899678267771378e-07
+objectness_loss: 0.006955429315567017
+invalid_penalty: 0.0
+
+
+
+Epoch 100
+Class loss: 0.07550400702282786
+IOU_boost: -0.0002755055650141003
+objectness_loss: 0.2786411062069237
+invalid_penalty: 0.0
+
+
+
+tensor(339, device='cuda:0', dtype=torch.int32) tensor(644, device='cuda:0', dtype=torch.int32) tensor(86, device='cuda:0', dtype=torch.int32) tensor(516, device='cuda:0', dtype=torch.int32)
