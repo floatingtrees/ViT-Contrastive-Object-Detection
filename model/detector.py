@@ -35,8 +35,8 @@ class Detector(nn.Module):
                 mlp_dim, # dimensionality of the feedforward layers within transformer blocks
                 image_channels = 3, # number of channels in the image
                 encoding_dimensionality = 512, # dimensionality of the class encodings
-                classifier_depth = 2, # depth of the classifiers on regression boxes
-                classifier_heads = 4, # number of heads on the regression box classifiers
+                classifier_depth = 4, # depth of the classifiers on regression boxes
+                classifier_heads = 8, # number of heads on the regression box classifiers
                 classifier_mlp_dim = 2048, # mlp dim of the classifier
                 classifier_patch_size = 8, # classifier patch size, with respect to the feature map
                 box_heights = (2, 4, 8), #possible anchor box heights for RPN, scales with patch size
@@ -100,7 +100,11 @@ class Detector(nn.Module):
             height_end = indexing_tensor[3]
             batch_location = indexing_tensor[4]
             section = features_and_image[batch_location, :, height_start:height_end, width_start:width_end]
-            reshaped = self.transformations[str(index_scalar)](section)
+            try:
+                reshaped = self.transformations[str(index_scalar)](section)
+            except:
+                print(height_start,height_end, width_start,width_end)
+                continue
             tensor_list.append(reshaped)
 
         stacked_tensor = torch.stack(tensor_list, dim=0)
@@ -147,7 +151,7 @@ class Detector(nn.Module):
         box_width_ratios = torch.tensor(self.anchor_boxes_width).to(device)
         box_width_relative = regs[:, :, :, :, (2, )].to(device)
         box_width_ratios = rearrange(box_width_ratios, 'c -> 1 1 1 c 1')
-        width_scaled = torch.mul(box_width_ratios, box_width_relative) + self.patch_width
+        width_scaled = torch.mul(box_width_ratios, box_width_relative)
         width_abs = width_coordinates + width_scaled
 
 
@@ -155,7 +159,7 @@ class Detector(nn.Module):
         box_height_ratios = torch.tensor(self.anchor_boxes_height).to(device)
         box_height_relative = regs[:, :, :, :, (3, )].to(device)
         box_height_ratios = rearrange(box_height_ratios, 'c -> 1 1 1 c 1')
-        height_abs = torch.mul(box_height_ratios, box_height_relative) + height_coordinates + self.patch_height
+        height_abs = torch.mul(box_height_ratios, box_height_relative) + height_coordinates
 
         batch_sizes = torch.arange(b, device = device)
         broadcasted_batch = repeat(batch_sizes, "b -> b h w k x", h = feature_h, w = feature_w, k = self.k, x = 1)
@@ -172,6 +176,9 @@ class Detector(nn.Module):
          (tensor_reshaped[..., 2] <= w + self.patch_width) & (tensor_reshaped[..., 3] >= tensor_reshaped[..., 1]) & 
          (tensor_reshaped[..., 3] <= h + self.patch_height))
         filtered_tensor = tensor_reshaped[valid_boxes_mask]
+
+        filtered_tensor[:, 2] = filtered_tensor[:, 2] + self.patch_width # add some extra padding to be safe
+        filtered_tensor[:, 3] = filtered_tensor[:, 3] + self.patch_height
 
         is_object_mask = filtered_tensor[..., 5] > is_object_threshold # check on the objectness score
         objects = filtered_tensor[is_object_mask]

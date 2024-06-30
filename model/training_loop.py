@@ -14,12 +14,11 @@ import gc
 if __name__ == "__main__":
     image_size = 1024
     patch_size = 16
-    num_classes = 100
     dim = 512
-    depth = 1
-    heads = 2
-    mlp_dim = 2048
-
+    depth = 4
+    heads = 16
+    mlp_dim = 16384
+    print_period = 100
     model = Detector(image_size = image_size, patch_size = patch_size, dim = dim, depth = depth, 
                 heads = heads, mlp_dim = mlp_dim)
 
@@ -45,6 +44,7 @@ if __name__ == "__main__":
 
 
     for epoch in range(num_epochs):
+        running_losses = [0, 0, 0, 0]
         for i, batch  in enumerate(dataloader):
             optimizer.zero_grad()
             img, boxes, categories, original = batch 
@@ -101,5 +101,16 @@ if __name__ == "__main__":
             scaler.step(optimizer)
             scaler.update()
             
-            if i % 10000 == 0:
+            running_losses[0] += class_loss.item()
+            running_losses[1] += IOU_boost.item()
+            running_losses[2] += objectness_loss.item()
+            running_losses[3] += invalid_penalty.item()
+            if i % print_period == 0:
+                print(f"Epoch {i}")
+                print(f"Class loss: {running_losses[0]/print_period}")
+                print(f"IOU_boost: {running_losses[1]/print_period}")
+                print(f"objectness_loss: {running_losses[2]/print_period}")
+                print(f"invalid_penalty: {running_losses[3]/print_period}")
+                print("\n\n")
+                running_losses = [0, 0, 0, 0]
                 visualize_image(original, adjusted_regression_outputs, categories, objectness, i)
